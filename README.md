@@ -1,9 +1,8 @@
 # go-peafowl
 
 ```
-chmod +x compile.sh
-./compile.sh
-go build
+make
+./go-peafowl -rf pcap/http.pcap
 ```
 
 

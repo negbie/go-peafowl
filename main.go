@@ -13,25 +13,25 @@ package main
 #include "peafowl_lib/src/api.h"
 
 #ifdef WIN32
-#define gopacket_time_secs_t long
-#define gopacket_time_usecs_t long
+#define dpi_time_secs_t long
+#define dpi_time_usecs_t long
 #elif __APPLE__
-#define gopacket_time_secs_t __darwin_time_t
-#define gopacket_time_usecs_t __darwin_suseconds_t
+#define dpi_time_secs_t __darwin_time_t
+#define dpi_time_usecs_t __darwin_suseconds_t
 #elif __ANDROID__
-#define gopacket_time_secs_t __kernel_time_t
-#define gopacket_time_usecs_t __kernel_suseconds_t
+#define dpi_time_secs_t __kernel_time_t
+#define dpi_time_usecs_t __kernel_suseconds_t
 #elif __GLIBC__
-#define gopacket_time_secs_t __time_t
-#define gopacket_time_usecs_t __suseconds_t
+#define dpi_time_secs_t __time_t
+#define dpi_time_usecs_t __suseconds_t
 #else  // Some form of linux/bsd/etc...
 #include <sys/param.h>
 #ifdef __OpenBSD__
-#define gopacket_time_secs_t u_int32_t
-#define gopacket_time_usecs_t u_int32_t
+#define dpi_time_secs_t u_int32_t
+#define dpi_time_usecs_t u_int32_t
 #else
-#define gopacket_time_secs_t time_t
-#define gopacket_time_usecs_t suseconds_t
+#define dpi_time_secs_t time_t
+#define dpi_time_usecs_t suseconds_t
 #endif
 #endif
 
@@ -57,7 +57,6 @@ u_int32_t dhcp_matches=0;
 u_int32_t dhcpv6_matches=0;
 u_int32_t rtp_matches=0;
 u_int32_t sip_matches=0;
-
 
 
 // init state
@@ -261,8 +260,8 @@ func main() {
 		}
 
 		var hdr C.struct_pcap_pkthdr
-		hdr.ts.tv_sec = C.gopacket_time_secs_t(ci.Timestamp.Unix())
-		hdr.ts.tv_usec = C.gopacket_time_usecs_t(ci.Timestamp.Nanosecond() / 1000)
+		hdr.ts.tv_sec = C.dpi_time_secs_t(ci.Timestamp.Unix())
+		hdr.ts.tv_usec = C.dpi_time_usecs_t(ci.Timestamp.Nanosecond() / 1000)
 		hdr.caplen = C.bpf_u_int32(len(data)) // Trust actual length over ci.Length.
 		hdr.len = C.bpf_u_int32(ci.Length)
 
