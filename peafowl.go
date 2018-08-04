@@ -1,11 +1,9 @@
-package main
+package peafowl
 
 /*
-#cgo CFLAGS: -I peafowl_lib/lib
-#cgo LDFLAGS: peafowl_lib/lib/libdpi.a
+#cgo CFLAGS: -I ${SRCDIR}peafowl_lib/lib
+#cgo LDFLAGS: ${SRCDIR}/peafowl_lib/lib/libdpi.a
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <net/ethernet.h>
 #include <netinet/in.h>
 #include <pcap.h>
@@ -45,7 +43,7 @@ struct pcap_pkthdr* header;
 const u_char* packet;
 
 uint ip_offset=0;
-u_int32_t unknown=0;
+u_int32_t unknown_matches=0;
 u_int32_t http_matches=0;
 u_int32_t dns_matches=0;
 u_int32_t bgp_matches=0;
@@ -78,8 +76,7 @@ int init()
 	dpi_identification_result_t r;
 	int ID_protocol = -1;
 
-	r = dpi_stateful_identify_application_protocol(state, packet+ip_offset,
-													header->caplen-ip_offset, time(NULL));
+	r = dpi_stateful_identify_application_protocol(state, packet+ip_offset, header->caplen-ip_offset, time(NULL));
 
 	if(r.protocol.l4prot==IPPROTO_TCP){
 		switch(r.protocol.l7prot){
@@ -96,7 +93,7 @@ int init()
 				++pop3_matches;
 				break;
 			default:
-				++unknown;
+				++unknown_matches;
 				break;
 		}
 	}else if(r.protocol.l4prot==IPPROTO_UDP){
@@ -123,13 +120,12 @@ int init()
 				++sip_matches;
 				break;
 			default:
-				++unknown;
+				++unknown_matches;
 				break;
 		}
 	}else{
-		++unknown;
+		++unknown_matches;
 	}
-
 
 	if(r.protocol.l4prot == IPPROTO_UDP){
 	  if(r.protocol.l7prot < DPI_NUM_UDP_PROTOCOLS){
@@ -151,8 +147,8 @@ int init()
 	res = malloc(2 * sizeof(char));
 	memset(res,-1,2);
 
-	r = dpi_stateful_identify_application_protocol(state, packet+ip_offset,
-		                                        	header->caplen-ip_offset, time(NULL));
+	r = dpi_stateful_identify_application_protocol(state, packet+ip_offset, header->caplen-ip_offset, time(NULL));
+
 	if(r.protocol.l4prot == IPPROTO_UDP){
 	  res[0] = IPPROTO_UDP;
 	  if(r.protocol.l7prot < DPI_NUM_UDP_PROTOCOLS){
@@ -177,98 +173,105 @@ int init()
 */
 import "C"
 import (
-	"flag"
-	"io"
-	"log"
-	"os"
+	"fmt"
+	"strings"
+	"time"
 	"unsafe"
-
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/pcapgo"
 )
 
-var (
-	pcapFile = flag.String("rf", "", "PCAP file")
-)
-
-type PcapgoHandle struct {
-	reader     *pcapgo.Reader
-	fileReader io.ReadCloser
+type DPI struct {
+	Stats Counter
 }
 
-func NewPcapgoHandle(f string) (*PcapgoHandle, error) {
-	fileReader, err := os.Open(f)
-	if err != nil {
-		return nil, err
-	}
-
-	reader, err := pcapgo.NewReader(fileReader)
-	if err != nil {
-		return nil, err
-	}
-	return &PcapgoHandle{
-		reader:     reader,
-		fileReader: fileReader,
-	}, nil
+// Counter contains statistics on how many packets were detected.
+type Counter struct {
+	//TODO add stats typesu_int32_t unknown_matches=0;
+	HTTP    uint32
+	DNS     uint32
+	BGP     uint32
+	SMTP    uint32
+	POP3    uint32
+	MDNS    uint32
+	NTP     uint32
+	DHCP4   uint32
+	DHCP6   uint32
+	RTP     uint32
+	SIP     uint32
+	Unknown uint32
 }
 
-func (a *PcapgoHandle) ReadPacketData() ([]byte, gopacket.CaptureInfo, error) {
-	data, ci, err := a.reader.ReadPacketData()
-	return data, ci, err
+func NewDPI() (*DPI, error) {
+	e := C.init()
+	if e == -1 {
+		return nil, fmt.Errorf("dpi_init_stateful failed")
+	}
+
+	return &DPI{}, nil
 }
 
-func (a *PcapgoHandle) Close() error {
-	return a.fileReader.Close()
+func (d *DPI) GetProtocol(data []byte, offset int, t time.Time, ciLen, dataLen int) (proto int) {
+	var hdr C.struct_pcap_pkthdr
+	hdr.ts.tv_sec = C.dpi_time_secs_t(t.Unix())
+	hdr.ts.tv_usec = C.dpi_time_usecs_t(t.Nanosecond() / 1000)
+	hdr.caplen = C.bpf_u_int32(dataLen) // Trust actual length over ci.Length.
+	hdr.len = C.bpf_u_int32(ciLen)
+
+	proto = int(C.get_protocol(
+		(*C.u_char)(unsafe.Pointer(&data[offset])),
+		&hdr,
+	))
+	return proto
 }
 
-func main() {
-	flag.Parse()
+func (d *DPI) GetProtocolPair(data []byte, offset int, t time.Time, ciLen, dataLen int) (res string) {
+	var hdr C.struct_pcap_pkthdr
+	hdr.ts.tv_sec = C.dpi_time_secs_t(t.Unix())
+	hdr.ts.tv_usec = C.dpi_time_usecs_t(t.Nanosecond() / 1000)
+	hdr.caplen = C.bpf_u_int32(dataLen) // Trust actual length over ci.Length.
+	hdr.len = C.bpf_u_int32(ciLen)
 
-	state := C.init()
-	if state == -1 {
-		log.Fatal("dpi_init_stateful ERROR")
-	}
-	defer C.terminate()
+	res = C.GoString(C.get_protocol_pair(
+		(*C.u_char)(unsafe.Pointer(&data[offset])),
+		&hdr,
+	))
+	return res
+}
 
-	h, err := NewPcapgoHandle(*pcapFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer h.Close()
+func (d *DPI) GetStats() {
+	d.Stats.Unknown = uint32(C.unknown_matches)
+	d.Stats.HTTP = uint32(C.http_matches)
+	d.Stats.BGP = uint32(C.bgp_matches)
+	d.Stats.POP3 = uint32(C.pop3_matches)
+	d.Stats.SMTP = uint32(C.smtp_matches)
+	d.Stats.NTP = uint32(C.ntp_matches)
+	d.Stats.DNS = uint32(C.dns_matches)
+	d.Stats.MDNS = uint32(C.mdns_matches)
+	d.Stats.DHCP4 = uint32(C.dhcp_matches)
+	d.Stats.DHCP6 = uint32(C.dhcpv6_matches)
+	d.Stats.RTP = uint32(C.rtp_matches)
+	d.Stats.SIP = uint32(C.sip_matches)
+}
 
-	for {
+func (d *DPI) String() string {
+	d.GetStats()
+	s := strings.Join([]string{`DPI Stats {`,
+		`Unknown:` + fmt.Sprintf("%v", d.Stats.Unknown) + `,`,
+		`HTTP:` + fmt.Sprintf("%v", d.Stats.HTTP) + `,`,
+		`BGP:` + fmt.Sprintf("%v", d.Stats.BGP) + `,`,
+		`POP3:` + fmt.Sprintf("%v", d.Stats.POP3) + `,`,
+		`SMTP:` + fmt.Sprintf("%v", d.Stats.SMTP) + `,`,
+		`NTP:` + fmt.Sprintf("%v", d.Stats.NTP) + `,`,
+		`DNS:` + fmt.Sprintf("%v", d.Stats.DNS) + `,`,
+		`MDNS:` + fmt.Sprintf("%v", d.Stats.MDNS) + `,`,
+		`DHCP4:` + fmt.Sprintf("%v", d.Stats.DHCP4) + `,`,
+		`DHCP6:` + fmt.Sprintf("%v", d.Stats.DHCP6) + `,`,
+		`RTP:` + fmt.Sprintf("%v", d.Stats.RTP) + `,`,
+		`SIP:` + fmt.Sprintf("%v", d.Stats.SIP),
+		`}`,
+	}, "")
+	return s
+}
 
-		data, ci, err := h.ReadPacketData()
-		if err == io.EOF {
-			log.Println("-------------------------------------")
-			log.Printf("Unknown:\t%d\n", C.unknown)
-			log.Printf("HTTP:\t%d\n", C.http_matches)
-			log.Printf("BGP:\t%d\n", C.bgp_matches)
-			log.Printf("POP3:\t%d\n", C.pop3_matches)
-			log.Printf("SMTP:\t%d\n", C.smtp_matches)
-			log.Printf("NTP:\t%d\n", C.ntp_matches)
-			log.Printf("DNS:\t%d\n", C.dns_matches)
-			log.Printf("MDNS:\t%d\n", C.mdns_matches)
-			log.Printf("DHCP:\t%d\n", C.dhcp_matches)
-			log.Printf("DHCPv6:\t%d\n", C.dhcpv6_matches)
-			log.Printf("RTP:\t%d\n", C.rtp_matches)
-			log.Printf("SIP:\t%d\n", C.sip_matches)
-			log.Println("-------------------------------------")
-			log.Fatal("reached end of file")
-		} else if err != nil {
-			log.Fatal(err)
-		}
-
-		var hdr C.struct_pcap_pkthdr
-		hdr.ts.tv_sec = C.dpi_time_secs_t(ci.Timestamp.Unix())
-		hdr.ts.tv_usec = C.dpi_time_usecs_t(ci.Timestamp.Nanosecond() / 1000)
-		hdr.caplen = C.bpf_u_int32(len(data)) // Trust actual length over ci.Length.
-		hdr.len = C.bpf_u_int32(ci.Length)
-
-		dataptr := (*C.u_char)(unsafe.Pointer(&data[0]))
-
-		C.get_protocol(dataptr, &hdr)
-		C.get_protocol_pair(dataptr, &hdr)
-	}
-
+func (d *DPI) Close() {
+	C.terminate()
 }

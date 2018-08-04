@@ -2,7 +2,7 @@
 
 ```
 make
-./go-peafowl -rf pcap/http.pcap
+example/go-peafowl -rf example/pcap/http.pcap
 ```
 
 
