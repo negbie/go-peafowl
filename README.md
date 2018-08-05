@@ -1,5 +1,6 @@
 # go-peafowl
 
+### Usage
 ```
 make
 example/go-peafowl -rf example/pcap/http.pcap

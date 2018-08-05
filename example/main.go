@@ -64,7 +64,7 @@ func main() {
 
 		if err == io.EOF {
 			log.Println("-------------------------------------")
-			log.Println(d.String())
+			log.Println(d.ShowStats())
 			log.Println("-------------------------------------")
 			log.Fatal("reached end of file")
 		} else if err != nil {

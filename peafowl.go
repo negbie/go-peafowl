@@ -1,14 +1,12 @@
 package peafowl
 
 /*
-#cgo CFLAGS: -I ${SRCDIR}peafowl_lib/lib
-#cgo LDFLAGS: ${SRCDIR}/peafowl_lib/lib/libdpi.a
+#cgo LDFLAGS: ${SRCDIR}/wrapper/libdpi.a
 
 #include <net/ethernet.h>
-#include <netinet/in.h>
 #include <pcap.h>
 #include <time.h>
-#include "peafowl_lib/src/api.h"
+#include "wrapper/api.h"
 
 #ifdef WIN32
 #define dpi_time_secs_t long
@@ -55,6 +53,8 @@ u_int32_t dhcp_matches=0;
 u_int32_t dhcpv6_matches=0;
 u_int32_t rtp_matches=0;
 u_int32_t sip_matches=0;
+u_int32_t skype_matches=0;
+u_int32_t ssl_matches=0;
 
 
 // init state
@@ -86,11 +86,14 @@ int init()
 			case DPI_PROTOCOL_TCP_HTTP:
 				++http_matches;
 				break;
+			case DPI_PROTOCOL_TCP_POP3:
+				++pop3_matches;
+				break;
 			case DPI_PROTOCOL_TCP_SMTP:
 				++smtp_matches;
 				break;
-			case DPI_PROTOCOL_TCP_POP3:
-				++pop3_matches;
+			case DPI_PROTOCOL_TCP_SSL:
+				++ssl_matches;
 				break;
 			default:
 				++unknown_matches;
@@ -118,6 +121,9 @@ int init()
 				break;
 			case DPI_PROTOCOL_UDP_SIP:
 				++sip_matches;
+				break;
+			case DPI_PROTOCOL_UDP_SKYPE:
+				++skype_matches;
 				break;
 			default:
 				++unknown_matches;
@@ -197,6 +203,8 @@ type Counter struct {
 	DHCP6   uint32
 	RTP     uint32
 	SIP     uint32
+	Skype   uint32
+	SSL     uint32
 	Unknown uint32
 }
 
@@ -237,7 +245,7 @@ func (d *DPI) GetProtocolPair(data []byte, offset int, t time.Time, ciLen, dataL
 	return res
 }
 
-func (d *DPI) GetStats() {
+func (d *DPI) ReceiveStats() {
 	d.Stats.Unknown = uint32(C.unknown_matches)
 	d.Stats.HTTP = uint32(C.http_matches)
 	d.Stats.BGP = uint32(C.bgp_matches)
@@ -250,10 +258,12 @@ func (d *DPI) GetStats() {
 	d.Stats.DHCP6 = uint32(C.dhcpv6_matches)
 	d.Stats.RTP = uint32(C.rtp_matches)
 	d.Stats.SIP = uint32(C.sip_matches)
+	d.Stats.Skype = uint32(C.skype_matches)
+	d.Stats.SSL = uint32(C.ssl_matches)
 }
 
-func (d *DPI) String() string {
-	d.GetStats()
+func (d *DPI) ShowStats() string {
+	d.ReceiveStats()
 	s := strings.Join([]string{`DPI Stats {`,
 		`Unknown:` + fmt.Sprintf("%v", d.Stats.Unknown) + `,`,
 		`HTTP:` + fmt.Sprintf("%v", d.Stats.HTTP) + `,`,
@@ -266,7 +276,9 @@ func (d *DPI) String() string {
 		`DHCP4:` + fmt.Sprintf("%v", d.Stats.DHCP4) + `,`,
 		`DHCP6:` + fmt.Sprintf("%v", d.Stats.DHCP6) + `,`,
 		`RTP:` + fmt.Sprintf("%v", d.Stats.RTP) + `,`,
-		`SIP:` + fmt.Sprintf("%v", d.Stats.SIP),
+		`SIP:` + fmt.Sprintf("%v", d.Stats.SIP) + `,`,
+		`Skype:` + fmt.Sprintf("%v", d.Stats.Skype) + `,`,
+		`SSL:` + fmt.Sprintf("%v", d.Stats.SSL),
 		`}`,
 	}, "")
 	return s
